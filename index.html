@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五子棋游戏</title>
+  <link rel="stylesheet" href="src/styles.css">
+  <!-- 使用CDN加载React和ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- 内联React应用代码 -->
+  <script>
+    // 棋盘大小常量
+    const BOARD_SIZE = 15; // 15x15棋盘
+    const CELL_SIZE = 30; // 每个单元格的大小
+    const BOARD_DIMENSION = CELL_SIZE * (BOARD_SIZE - 1); // 棋盘总尺寸
+
+    // 游戏状态常量
+    const GAME_STATUS = {
+      PLAYING: 'playing',
+      PAUSED: 'paused',
+      BLACK_WIN: 'black_win',
+      WHITE_WIN: 'white_win',
+      DRAW: 'draw'
+    };
+
+    // 棋子类型常量
+    const PIECE_TYPE = {
+      EMPTY: 0,
+      BLACK: 1,
+      WHITE: 2
+    };
+
+    // 五子棋游戏组件
+    function WuziqiGame() {
+      // 使用React Hooks
+      const [board, setBoard] = React.useState(() => {
+        // 初始化空棋盘
+        return Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(PIECE_TYPE.EMPTY));
+      });
+      const [currentPlayer, setCurrentPlayer] = React.useState(PIECE_TYPE.BLACK);
+      const [gameStatus, setGameStatus] = React.useState(GAME_STATUS.PLAYING);
+      const [moveHistory, setMoveHistory] = React.useState([]);
+      const [lastMove, setLastMove] = React.useState(null);
+      const [showModal, setShowModal] = React.useState(false);
+      const [modalContent, setModalContent] = React.useState({ title: '', message: '' });
+      const [errorMessage, setErrorMessage] = React.useState('');
+
+      // 检查胜负
+      const checkWin = React.useCallback((row, col, player) => {
+        const directions = [
+          [0, 1],  // 水平
+          [1, 0],  // 垂直
+          [1, 1],  // 右下对角线
+          [1, -1]  // 左下对角线
+        ];
+
+        for (const [dx, dy] of directions) {
+          let count = 1; // 当前位置已经有一个棋子
+          
+          // 正方向查找
+          for (let i = 1; i < 5; i++) {
+            const newRow = row + i * dx;
+            const newCol = col + i * dy;
+            if (newRow >= 0 && newRow < BOARD_SIZE && newCol >= 0 && newCol < BOARD_SIZE && 
+                board[newRow][newCol] === player) {
+              count++;
+            } else {
+              break;
+            }
+          }
+          
+          // 反方向查找
+          for (let i = 1; i < 5; i++) {
+            const newRow = row - i * dx;
+            const newCol = col - i * dy;
+            if (newRow >= 0 && newRow < BOARD_SIZE && newCol >= 0 && newCol < BOARD_SIZE && 
+                board[newRow][newCol] === player) {
+              count++;
+            } else {
+              break;
+            }
+          }
+          
+          // 五子连珠
+          if (count >= 5) {
+            return true;
+          }
+        }
+        return false;
+      }, [board]);
+
+      // 检查是否平局
+      const checkDraw = React.useCallback(() => {
+        for (let i = 0; i < BOARD_SIZE; i++) {
+          for (let j = 0; j < BOARD_SIZE; j++) {
+            if (board[i][j] === PIECE_TYPE.EMPTY) {
+              return false; // 还有空位，不是平局
+            }
+          }
+        }
+        return true; // 棋盘已满，平局
+      }, [board]);
+
+      // 处理落子
+      const handleCellClick = React.useCallback((row, col) => {
+        // 检查游戏状态
+        if (gameStatus !== GAME_STATUS.PLAYING) {
+          setErrorMessage('游戏已结束，请开始新游戏');
+          setTimeout(() => setErrorMessage(''), 2000);
+          return;
+        }
+
+        // 检查位置是否为空
+        if (board[row][col] !== PIECE_TYPE.EMPTY) {
+          setErrorMessage('该位置已有棋子');
+          setTimeout(() => setErrorMessage(''), 2000);
+          return;
+        }
+
+        // 创建新棋盘并落子
+        const newBoard = board.map(row => [...row]);
+        newBoard[row][col] = currentPlayer;
+        setBoard(newBoard);
+
+        // 记录落子历史
+        const newMoveHistory = [...moveHistory, { row, col, player: currentPlayer }];
+        setMoveHistory(newMoveHistory);
+        setLastMove({ row, col });
+
+        // 检查胜负
+        if (checkWin(row, col, currentPlayer)) {
+          const winnerStatus = currentPlayer === PIECE_TYPE.BLACK ? GAME_STATUS.BLACK_WIN : GAME_STATUS.WHITE_WIN;
+          setGameStatus(winnerStatus);
+          
+          // 显示胜利模态框
+          setModalContent({
+            title: '游戏结束',
+            message: currentPlayer === PIECE_TYPE.BLACK ? '黑方获胜！' : '白方获胜！'
+          });
+          setShowModal(true);
+        } else if (checkDraw()) {
+          // 检查平局
+          setGameStatus(GAME_STATUS.DRAW);
+          setModalContent({
+            title: '游戏结束',
+            message: '平局！'
+          });
+          setShowModal(true);
+        } else {
+          // 切换玩家
+          setCurrentPlayer(currentPlayer === PIECE_TYPE.BLACK ? PIECE_TYPE.WHITE : PIECE_TYPE.BLACK);
+        }
+      }, [board, currentPlayer, gameStatus, moveHistory, checkWin, checkDraw]);
+
+      // 悔棋功能
+      const handleUndo = React.useCallback(() => {
+        if (moveHistory.length === 0) {
+          setErrorMessage('没有可悔的棋');
+          setTimeout(() => setErrorMessage(''), 2000);
+          return;
+        }
+
+        // 撤销最后一步
+        const newMoveHistory = moveHistory.slice(0, -1);
+        setMoveHistory(newMoveHistory);
+
+        // 恢复棋盘状态
+        const newBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(PIECE_TYPE.EMPTY));
+        newMoveHistory.forEach(move => {
+          newBoard[move.row][move.col] = move.player;
+        });
+        setBoard(newBoard);
+
+        // 更新最后一步位置
+        const last = newMoveHistory.length > 0 ? newMoveHistory[newMoveHistory.length - 1] : null;
+        setLastMove(last ? { row: last.row, col: last.col } : null);
+
+        // 切换回上一个玩家
+        const lastPlayer = moveHistory[moveHistory.length - 1].player;
+        setCurrentPlayer(lastPlayer);
+
+        // 恢复游戏状态
+        setGameStatus(GAME_STATUS.PLAYING);
+        setShowModal(false);
+      }, [moveHistory]);
+
+      // 暂停/继续游戏
+      const handlePauseResume = React.useCallback(() => {
+        if (gameStatus === GAME_STATUS.PLAYING) {
+          setGameStatus(GAME_STATUS.PAUSED);
+        } else if (gameStatus === GAME_STATUS.PAUSED) {
+          setGameStatus(GAME_STATUS.PLAYING);
+        }
+      }, [gameStatus]);
+
+      // 新游戏
+      const handleNewGame = React.useCallback(() => {
+        const newBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(PIECE_TYPE.EMPTY));
+        setBoard(newBoard);
+        setCurrentPlayer(PIECE_TYPE.BLACK);
+        setGameStatus(GAME_STATUS.PLAYING);
+        setMoveHistory([]);
+        setLastMove(null);
+        setErrorMessage('');
+        setShowModal(false);
+      }, []);
+
+      // 渲染棋盘网格线
+      const renderGridLines = () => {
+        const lines = [];
+        
+        // 水平线条
+        for (let i = 0; i < BOARD_SIZE; i++) {
+          lines.push(
+            React.createElement('div', {
+              key: `h-${i}`,
+              className: 'grid-line horizontal',
+              style: {
+                top: `${i * CELL_SIZE}px`,
+                left: '0',
+                width: `${BOARD_DIMENSION}px`
+              }
+            })
+          );
+        }
+        
+        // 垂直线条
+        for (let i = 0; i < BOARD_SIZE; i++) {
+          lines.push(
+            React.createElement('div', {
+              key: `v-${i}`,
+              className: 'grid-line vertical',
+              style: {
+                left: `${i * CELL_SIZE}px`,
+                top: '0',
+                height: `${BOARD_DIMENSION}px`
+              }
+            })
+          );
+        }
+        
+        return lines;
+      };
+
+      // 渲染棋盘单元格
+      const renderCells = () => {
+        const cells = [];
+        for (let row = 0; row < BOARD_SIZE; row++) {
+          for (let col = 0; col < BOARD_SIZE; col++) {
+            const pieceType = board[row][col];
+            const isLastMove = lastMove && lastMove.row === row && lastMove.col === col;
+            const cellChildren = [];
+            
+            if (pieceType !== PIECE_TYPE.EMPTY) {
+              cellChildren.push(
+                React.createElement('div', {
+                  key: `piece-${row}-${col}`,
+                  className: `piece ${pieceType === PIECE_TYPE.BLACK ? 'black' : 'white'}`
+                })
+              );
+            }
+            
+            if (isLastMove) {
+              cellChildren.push(
+                React.createElement('div', {
+                  key: `last-move-${row}-${col}`,
+                  className: 'last-move'
+                })
+              );
+            }
+            
+            cells.push(
+              React.createElement('div', {
+                key: `cell-${row}-${col}`,
+                className: 'cell',
+                style: {
+                  width: `${CELL_SIZE}px`,
+                  height: `${CELL_SIZE}px`
+                },
+                onClick: () => handleCellClick(row, col)
+              }, cellChildren)
+            );
+          }
+        }
+        return cells;
+      };
+
+      // 获取游戏状态文本
+      const getGameStatusText = () => {
+        switch (gameStatus) {
+          case GAME_STATUS.PLAYING:
+            return '游戏进行中';
+          case GAME_STATUS.PAUSED:
+            return '游戏已暂停';
+          case GAME_STATUS.BLACK_WIN:
+            return '黑方获胜';
+          case GAME_STATUS.WHITE_WIN:
+            return '白方获胜';
+          case GAME_STATUS.DRAW:
+            return '平局';
+          default:
+            return '';
+        }
+      };
+
+      return React.createElement('div', { className: 'game-container' },
+        React.createElement('h1', { className: 'game-title' }, '五子棋游戏'),
+        
+        React.createElement('div', { className: 'game-info' },
+          React.createElement('div', { className: 'player-info' },
+            React.createElement('div', { 
+              className: `player-indicator ${currentPlayer === PIECE_TYPE.BLACK ? 'black' : 'white'}` 
+            }),
+            React.createElement('span', { className: 'current-player' },
+              '当前玩家: ', currentPlayer === PIECE_TYPE.BLACK ? '黑方' : '白方'
+            )
+          ),
+          React.createElement('div', { className: 'game-status' },
+            '状态: ', getGameStatusText()
+          )
+        ),
+
+        errorMessage && (
+          React.createElement('div', { style: { color: 'red', marginBottom: '10px', fontWeight: 'bold' } },
+            errorMessage
+          )
+        ),
+
+        React.createElement('div', 
+          { 
+            className: 'board-container',
+            style: {
+              width: `${BOARD_DIMENSION}px`,
+              height: `${BOARD_DIMENSION}px`
+            }
+          },
+          React.createElement('div', 
+            { 
+              className: 'board',
+              style: {
+                display: 'grid',
+                gridTemplateColumns: `repeat(${BOARD_SIZE}, ${CELL_SIZE}px)`,
+                gridTemplateRows: `repeat(${BOARD_SIZE}, ${CELL_SIZE}px)`
+              }
+            },
+            renderCells()
+          ),
+          React.createElement('div', { className: 'board-grid' },
+            renderGridLines()
+          )
+        ),
+
+        React.createElement('div', { className: 'toolbar' },
+          React.createElement('button', { onClick: handleNewGame }, '新游戏'),
+          React.createElement('button', 
+            { 
+              onClick: handleUndo,
+              disabled: moveHistory.length === 0 || gameStatus === GAME_STATUS.PAUSED
+            },
+            '悔棋'
+          ),
+          React.createElement('button', 
+            { 
+              onClick: handlePauseResume,
+              disabled: gameStatus !== GAME_STATUS.PLAYING && gameStatus !== GAME_STATUS.PAUSED
+            },
+            gameStatus === GAME_STATUS.PLAYING ? '暂停' : '继续'
+          )
+        ),
+
+        showModal && (
+          React.createElement('div', { className: 'modal-overlay' },
+            React.createElement('div', { className: 'modal-content' },
+              React.createElement('h2', { className: 'modal-title' }, modalContent.title),
+              React.createElement('p', { className: 'modal-message' }, modalContent.message),
+              React.createElement('div', { className: 'modal-buttons' },
+                React.createElement('button', { className: 'primary-button', onClick: handleNewGame },
+                  '新游戏'
+                ),
+                React.createElement('button', { className: 'secondary-button', onClick: () => setShowModal(false) },
+                  '关闭'
+                )
+              )
+            )
+          )
+        )
+      );
+    }
+
+    // 渲染应用
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(WuziqiGame));
+  </script>
+</body>
+</html>
